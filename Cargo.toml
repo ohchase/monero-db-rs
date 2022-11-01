@@ -1,0 +1,11 @@
+[package]
+name = "monero_db"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+
+[dependencies]
+monero-lmdb-rkv = "0.1.0"
+monero = {git = "https://github.com/Boog900/monero-rs.git", branch="database2"}
+thiserror = "1.0.24"

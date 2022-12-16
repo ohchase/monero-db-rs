@@ -10,8 +10,9 @@
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
 
-use lmdb::{Cursor, Database, Environment, EnvironmentFlags, Transaction};
+use lmdb::{Cursor, Database, Environment, EnvironmentFlags, Transaction, WriteFlags};
 use monero::consensus::{deserialize, serialize, Decodable, Encodable};
+use monero::cryptonote::hash::Hashable;
 use monero::database_types::block::{AltBlock, BlockHeight, BlockInfo};
 use monero::database_types::transaction::{
     OutTx, PreRctOutkey, RctOutkey, TransactionPruned, TxIndex, TxOutputIdx, TxPoolMeta,
@@ -27,22 +28,22 @@ use super::{Error, ZERO_KEY};
 ///
 #[derive(Debug)]
 pub enum Parse<T: Decodable + Encodable + Debug> {
-    No(Vec<u8>),
-    Yes(T),
+    False(Vec<u8>),
+    True(T),
 }
 
 impl<T: Decodable + Encodable + Debug> Parse<T> {
     pub fn deserialize(self) -> Result<T, Error> {
         match self {
-            Parse::No(data) => Ok(deserialize(&data)?),
-            Parse::Yes(data) => Ok(data),
+            Parse::False(data) => Ok(deserialize(&data)?),
+            Parse::True(data) => Ok(data),
         }
     }
 
     pub fn serialize(self) -> Vec<u8> {
         match self {
-            Parse::No(data) => data,
-            Parse::Yes(data) => serialize(&data),
+            Parse::False(data) => data,
+            Parse::True(data) => serialize(&data),
         }
     }
 }
@@ -84,7 +85,7 @@ impl MoneroDB {
     pub fn get_alt_block(&self, block_hash: &[u8], parse: bool) -> Result<Parse<AltBlock>, Error> {
         if block_hash.len() != 32 {
             return Err(Error::ValueError(
-                "Block hash should be 32 bytes long".to_string(),
+                "Block hash should be 32 bytes long",
             ));
         }
         get_item(
@@ -136,7 +137,7 @@ impl MoneroDB {
     ) -> Result<Parse<BlockHeight>, Error> {
         if block_hash.len() != 32 {
             return Err(Error::ValueError(
-                "Block hash should be 32 bytes long".to_string(),
+                "Block hash should be 32 bytes long",
             ));
         }
         get_item(
@@ -333,6 +334,7 @@ impl MoneroDB {
             false,
         );
         if let Err(Error::DatabaseError(e)) = data {
+            // key not found
             if e.to_err_code() == -30798 {
                 return Ok(false);
             }
@@ -389,10 +391,41 @@ impl MoneroDB {
         get_item::<u32>(&self.env, self.sub_dbs.properties, key, &[0], 15, true)?.deserialize()
     }
 
+    /// Gets the max block size
+    ///
+    pub fn get_max_block_size(&self) -> Result<u64, Error> {
+        let key = b"max_block_size\0";
+        get_item::<u64>(&self.env, self.sub_dbs.properties, key, &[0], 15, true)?.deserialize()
+    }
+
     /// Returns if the database is readonly
     /// 
     pub fn is_readonly(&self) -> bool {
         self.read_only
+    }
+
+    // ##################### WRITE TRANSACTIONS #####################
+
+    /// Adds an alt block to the database
+    /// 
+    pub fn add_alt_block(&self, alt_block: &AltBlock) -> Result<(), Error> {
+        if self.is_readonly() {
+            return Err(Error::ReadOnly);
+        }
+        let block_id = alt_block.block.id().as_bytes().to_vec();
+        put_item(&self.env, self.sub_dbs.alt_blocks, &block_id, &serialize(alt_block), WriteFlags::NO_DUP_DATA)
+     }
+
+    /// Adds a transaction to the transaction pool 
+    /// 
+    pub fn add_txpool_tx(&self, tx: &monero::Transaction, tx_meta: &TxPoolMeta) -> Result<(), Error> {
+        if self.is_readonly() {
+            return Err(Error::ReadOnly);
+        }
+        let tx_hash = tx.hash().as_bytes().to_vec();
+        put_item(&self.env, self.sub_dbs.txpool_meta, &tx_hash, &serialize(tx_meta), WriteFlags::NO_DUP_DATA)?;
+        put_item(&self.env, self.sub_dbs.txpool_blob, &tx_hash, &serialize(tx), WriteFlags::NO_DUP_DATA)?;
+        Ok(())
     }
 }
 
@@ -408,7 +441,19 @@ fn get_item<T: Decodable + Encodable + Debug>(
     let curser = transaction.open_ro_cursor(db)?;
     let value = curser.get(Some(key), Some(data), op)?;
     if parse {
-        return Ok(Parse::Yes(deserialize(value.1)?));
+        return Ok(Parse::True(deserialize(value.1)?));
     }
-    Ok(Parse::No(value.1.to_vec()))
+    Ok(Parse::False(value.1.to_vec()))
+}
+
+fn put_item(
+    env: &Environment,
+    db: Database,
+    key: &Vec<u8>,
+    data: &Vec<u8>,
+    flags: WriteFlags,
+) -> Result<(), Error> {
+    let mut transaction = env.begin_rw_txn()?;
+    let mut curser = transaction.open_rw_cursor(db)?;
+    Ok(curser.put(key, data, flags)?)
 }

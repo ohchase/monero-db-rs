@@ -6,6 +6,6 @@ license = "MIT"
 
 
 [dependencies]
-monero-lmdb-rkv = "0.1.0"
-monero = {git = "https://github.com/Boog900/monero-rs.git", branch="database2"}
+monero-lmdb-rkv = {git = "https://github.com/Boog900/lmdb-rs.git"}
+monero = {git = "https://github.com/Boog900/monero-rs.git", branch="db", features=["database"]}
 thiserror = "1.0.24"

@@ -40,9 +40,12 @@ pub enum Error {
     /// Errors relating to the database eg: retrieving value from database
     #[error("Retrieval error: {0}")]
     DatabaseError(#[from] lmdb::Error),
+    /// The database is readonly
+    #[error("Database is read only")]
+    ReadOnly,
     /// Input for a retrieval is incorrect eg: hash is not 32 bytes long
     #[error("Value cannot be searched for: {0}")]
-    ValueError(String),
+    ValueError(&'static str),
     /// Error deserializing the retrieved data
     #[error("Failed to decode value from database: {0}")]
     MoneroDecodingError(#[from] monero::consensus::encode::Error),

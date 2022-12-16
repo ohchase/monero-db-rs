@@ -122,7 +122,7 @@ impl MoneroDB {
             &self.env,
             self.sub_dbs.block_info,
             &ZERO_KEY,
-            &block_height.to_be_bytes(),
+            &block_height.to_le_bytes(),
             2,
             parse,
         )
@@ -273,7 +273,7 @@ impl MoneroDB {
         get_item(
             &self.env,
             self.sub_dbs.txs_prunable_tip,
-            &txn_id.to_be_bytes(),
+            &txn_id.to_le_bytes(),
             &[0],
             15,
             parse,

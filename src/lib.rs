@@ -28,8 +28,10 @@
 use thiserror::Error;
 
 mod monero_db;
-pub use monero_db::MoneroDB;
 mod sub_db;
+
+pub use monero_db::MoneroDB;
+
 
 const ZERO_KEY: [u8; 8] = [0; 8];
 

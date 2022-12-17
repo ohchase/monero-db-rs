@@ -82,16 +82,11 @@ impl MoneroDB {
 
     /// Gets alternative block from database.
     ///
-    pub fn get_alt_block(&self, block_hash: &[u8], parse: bool) -> Result<Parse<AltBlock>, Error> {
-        if block_hash.len() != 32 {
-            return Err(Error::ValueError(
-                "Block hash should be 32 bytes long",
-            ));
-        }
+    pub fn get_alt_block(&self, block_hash: &Hash, parse: bool) -> Result<Parse<AltBlock>, Error> {
         get_item(
             &self.env,
             self.sub_dbs.alt_blocks,
-            block_hash,
+            block_hash.as_bytes(),
             &[0],
             15,
             parse,
@@ -132,19 +127,14 @@ impl MoneroDB {
     ///
     pub fn get_block_height(
         &self,
-        block_hash: &[u8],
+        block_hash: &Hash,
         parse: bool,
     ) -> Result<Parse<BlockHeight>, Error> {
-        if block_hash.len() != 32 {
-            return Err(Error::ValueError(
-                "Block hash should be 32 bytes long",
-            ));
-        }
         get_item(
             &self.env,
             self.sub_dbs.block_heights,
             &ZERO_KEY,
-            block_hash,
+            block_hash.as_bytes(),
             2,
             parse,
         )
@@ -267,7 +257,7 @@ impl MoneroDB {
         )
     }
 
-    /// Gets the height of the transaction if that transactions block height + 5500 is > the blockchain height
+    /// Gets the height of the transaction if that transactions block height + 5500 is >= the blockchain height
     ///
     pub fn get_txs_prunable_tip(&self, txn_id: u64, parse: bool) -> Result<Parse<u64>, Error> {
         get_item(
@@ -280,7 +270,7 @@ impl MoneroDB {
         )
     }
 
-    /// Gets the height of the first block where the blocks height + 5500 is > than the blockchain height
+    /// Gets the height of the first block where the blocks height + 5500 is = the blockchain height
     ///
     pub fn get_prunable_tip(&self) -> Result<u64, Error> {
         get_item::<u64>(
@@ -309,12 +299,12 @@ impl MoneroDB {
 
     /// Get the [`TxIndex`] from a transaction  
     ///
-    pub fn get_tx_indices(&self, txn_hash: &[u8], parse: bool) -> Result<Parse<TxIndex>, Error> {
+    pub fn get_tx_indices(&self, txn_hash: &Hash, parse: bool) -> Result<Parse<TxIndex>, Error> {
         get_item(
             &self.env,
             self.sub_dbs.tx_indices,
             &ZERO_KEY,
-            txn_hash,
+            txn_hash.as_bytes(),
             2,
             parse,
         )
@@ -347,13 +337,13 @@ impl MoneroDB {
     ///
     pub fn get_txpool_tx(
         &self,
-        txn_hash: &[u8],
+        txn_hash: &Hash,
         parse: bool,
     ) -> Result<Parse<monero::Transaction>, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txpool_blob,
-            txn_hash,
+            txn_hash.as_bytes(),
             &[0],
             15,
             parse,
@@ -364,13 +354,13 @@ impl MoneroDB {
     ///
     pub fn get_txpool_meta(
         &self,
-        txn_hash: &[u8],
+        txn_hash: &Hash,
         parse: bool,
     ) -> Result<Parse<TxPoolMeta>, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txpool_meta,
-            txn_hash,
+            txn_hash.as_bytes(),
             &[0],
             15,
             parse,

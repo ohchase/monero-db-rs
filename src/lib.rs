@@ -17,7 +17,6 @@
 //! previous Monero types, however only the current database version is supported (5).
 //!
 
-
 // Coding conventions
 #![forbid(unsafe_code)]
 #![deny(non_upper_case_globals)]
@@ -32,7 +31,6 @@ mod sub_db;
 
 pub use monero_db::MoneroDB;
 
-
 const ZERO_KEY: [u8; 8] = [0; 8];
 
 /// Potential errors
@@ -45,9 +43,6 @@ pub enum Error {
     /// The database is readonly
     #[error("Database is read only")]
     ReadOnly,
-    /// Input for a retrieval is incorrect eg: hash is not 32 bytes long
-    #[error("Value cannot be searched for: {0}")]
-    ValueError(&'static str),
     /// Error deserializing the retrieved data
     #[error("Failed to decode value from database: {0}")]
     MoneroDecodingError(#[from] monero::consensus::encode::Error),

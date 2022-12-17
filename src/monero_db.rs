@@ -17,36 +17,12 @@ use monero::database_types::block::{AltBlock, BlockHeight, BlockInfo};
 use monero::database_types::transaction::{
     OutTx, PreRctOutkey, RctOutkey, TransactionPruned, TxIndex, TxOutputIdx, TxPoolMeta,
 };
-use monero::{Block, Hash};
+use monero::{Block, Hash, PublicKey};
 use std::fmt::Debug;
 use std::path::Path;
 
 use super::sub_db::MoneroSubDB;
 use super::{Error, ZERO_KEY};
-
-/// Output of a retrieval from a database
-///
-#[derive(Debug)]
-pub enum Parse<T: Decodable + Encodable + Debug> {
-    False(Vec<u8>),
-    True(T),
-}
-
-impl<T: Decodable + Encodable + Debug> Parse<T> {
-    pub fn deserialize(self) -> Result<T, Error> {
-        match self {
-            Parse::False(data) => Ok(deserialize(&data)?),
-            Parse::True(data) => Ok(data),
-        }
-    }
-
-    pub fn serialize(self) -> Vec<u8> {
-        match self {
-            Parse::False(data) => data,
-            Parse::True(data) => serialize(&data),
-        }
-    }
-}
 
 /// Struct containing the data needed to interact with a
 /// Monero database
@@ -58,7 +34,7 @@ pub struct MoneroDB {
 }
 
 impl MoneroDB {
-    /// Opens the Monero database
+    /// Opens the Monero the database
     ///
     pub fn open(dir: &Path, read_only: bool) -> Result<Self, Error> {
         let mut env = Environment::new();
@@ -80,63 +56,72 @@ impl MoneroDB {
         })
     }
 
-    /// Gets alternative block from database.
+    /// Gets alternative block from the database.
     ///
-    pub fn get_alt_block(&self, block_hash: &Hash, parse: bool) -> Result<Parse<AltBlock>, Error> {
+    pub fn get_alt_block(&self, block_hash: &Hash) -> Result<AltBlock, Error> {
         get_item(
             &self.env,
             self.sub_dbs.alt_blocks,
             block_hash.as_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
-    /// Gets block from database.
+    /// Gets block from the database.
     ///
-    pub fn get_block(&self, block_height: u64, parse: bool) -> Result<Parse<Block>, Error> {
+    pub fn get_block(&self, block_height: u64) -> Result<Block, Error> {
         get_item(
             &self.env,
             self.sub_dbs.blocks,
             &block_height.to_le_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
-    /// Gets block info from database
+    /// Gets block info from the database
     ///
-    pub fn get_block_info(
-        &self,
-        block_height: u64,
-        parse: bool,
-    ) -> Result<Parse<BlockInfo>, Error> {
+    pub fn get_block_info(&self, block_height: u64) -> Result<BlockInfo, Error> {
         get_item(
             &self.env,
             self.sub_dbs.block_info,
             &ZERO_KEY,
             &block_height.to_le_bytes(),
             2,
-            parse,
         )
+    }
+
+    /// Gets the blocks difficulty from the database
+    ///
+    pub fn get_block_difficulty(&self, block_height: u64) -> Result<u128, Error> {
+        let prev_block = get_item::<BlockInfo>(
+            &self.env,
+            self.sub_dbs.block_info,
+            &ZERO_KEY,
+            &(block_height - 1).to_le_bytes(),
+            2,
+        )?;
+        let block = get_item::<BlockInfo>(
+            &self.env,
+            self.sub_dbs.block_info,
+            &ZERO_KEY,
+            &block_height.to_le_bytes(),
+            2,
+        )?;
+
+        Ok(block.cum_difficulty() - prev_block.cum_difficulty())
     }
 
     /// Gets block height from database
     ///
-    pub fn get_block_height(
-        &self,
-        block_hash: &Hash,
-        parse: bool,
-    ) -> Result<Parse<BlockHeight>, Error> {
+    pub fn get_block_height(&self, block_hash: &Hash) -> Result<BlockHeight, Error> {
         get_item(
             &self.env,
             self.sub_dbs.block_heights,
             &ZERO_KEY,
             block_hash.as_bytes(),
             2,
-            parse,
         )
     }
 
@@ -157,42 +142,31 @@ impl MoneroDB {
             &block_height.to_le_bytes(),
             &[0],
             15,
-            true,
-        )?
-        .deserialize()
+        )
     }
 
     /// Gets the pruned part of the transaction
     ///
-    pub fn get_tx_pruned(
-        &self,
-        txn_id: u64,
-        parse: bool,
-    ) -> Result<Parse<TransactionPruned>, Error> {
+    pub fn get_tx_pruned(&self, txn_id: u64) -> Result<TransactionPruned, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txs_pruned,
             &txn_id.to_le_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
     /// Gets the prunable part of the transaction
     ///
     pub fn get_tx_prunable(&self, txn_id: u64) -> Result<Vec<u8>, Error> {
-        // This will always return bytes and won't attempt to de-serialize
-        // that is why it has a random type(Block)
-        Ok(get_item::<Block>(
+        get_raw_item(
             &self.env,
             self.sub_dbs.txs_prunable,
             &txn_id.to_le_bytes(),
             &[0],
             15,
-            false,
-        )?
-        .serialize())
+        )
     }
 
     /// Gets the [`Outkey`] of a transactions output
@@ -201,15 +175,13 @@ impl MoneroDB {
         &self,
         amount: u64,
         amount_output_index: u64,
-        parse: bool,
-    ) -> Result<Parse<RctOutkey>, Error> {
+    ) -> Result<RctOutkey, Error> {
         get_item(
             &self.env,
             self.sub_dbs.output_amounts,
             &amount.to_le_bytes(),
             &amount_output_index.to_le_bytes(),
             2,
-            parse,
         )
     }
 
@@ -219,110 +191,87 @@ impl MoneroDB {
         &self,
         amount: u64,
         amount_output_index: u64,
-        parse: bool,
-    ) -> Result<Parse<PreRctOutkey>, Error> {
+    ) -> Result<PreRctOutkey, Error> {
         get_item(
             &self.env,
             self.sub_dbs.output_amounts,
             &amount.to_le_bytes(),
             &amount_output_index.to_le_bytes(),
             2,
-            parse,
         )
     }
 
     /// Gets amount output indices of the transaction outputs
     ///
-    pub fn get_tx_output_idx(&self, txn_id: u64, parse: bool) -> Result<Parse<TxOutputIdx>, Error> {
+    pub fn get_tx_output_idx(&self, txn_id: u64) -> Result<TxOutputIdx, Error> {
         get_item(
             &self.env,
             self.sub_dbs.tx_outputs,
             &txn_id.to_le_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
     /// Gets the hash of the prunable part of the transaction
     ///
-    pub fn get_txs_prunable_hash(&self, txn_id: u64, parse: bool) -> Result<Parse<Hash>, Error> {
+    pub fn get_txs_prunable_hash(&self, txn_id: u64) -> Result<Hash, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txs_prunable_hash,
             &txn_id.to_le_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
     /// Gets the height of the transaction if that transactions block height + 5500 is >= the blockchain height
     ///
-    pub fn get_txs_prunable_tip(&self, txn_id: u64, parse: bool) -> Result<Parse<u64>, Error> {
+    pub fn get_txs_prunable_tip(&self, txn_id: u64) -> Result<u64, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txs_prunable_tip,
             &txn_id.to_le_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
     /// Gets the height of the first block where the blocks height + 5500 is = the blockchain height
     ///
     pub fn get_prunable_tip(&self) -> Result<u64, Error> {
-        get_item::<u64>(
-            &self.env,
-            self.sub_dbs.txs_prunable_tip,
-            &[0],
-            &[0],
-            0,
-            true,
-        )?
-        .deserialize()
+        get_item::<u64>(&self.env, self.sub_dbs.txs_prunable_tip, &[0], &[0], 0)
     }
 
     /// Gets the [`OutTx`] of an output
     ///
-    pub fn get_output_tx(&self, output_id: u64, parse: bool) -> Result<Parse<OutTx>, Error> {
+    pub fn get_output_tx(&self, output_id: u64) -> Result<OutTx, Error> {
         get_item(
             &self.env,
             self.sub_dbs.output_txs,
             &ZERO_KEY,
             &output_id.to_le_bytes(),
             2,
-            parse,
         )
     }
 
     /// Get the [`TxIndex`] from a transaction  
     ///
-    pub fn get_tx_indices(&self, txn_hash: &Hash, parse: bool) -> Result<Parse<TxIndex>, Error> {
+    pub fn get_tx_indices(&self, txn_hash: &Hash) -> Result<TxIndex, Error> {
         get_item(
             &self.env,
             self.sub_dbs.tx_indices,
             &ZERO_KEY,
             txn_hash.as_bytes(),
             2,
-            parse,
         )
     }
 
     /// Returns if a key image has already been spent
     ///
     pub fn is_key_image_spent(&self, spent_key: &[u8]) -> Result<bool, Error> {
-        // This will always return nothing and won't attempt to de-serialize
-        // that is why it has a random type(Block)
-        let data = get_item::<Block>(
-            &self.env,
-            self.sub_dbs.spent_keys,
-            &ZERO_KEY,
-            spent_key,
-            2,
-            false,
-        );
+        let data =
+            get_item::<PublicKey>(&self.env, self.sub_dbs.spent_keys, &ZERO_KEY, spent_key, 2);
         if let Err(Error::DatabaseError(e)) = data {
             // key not found
             if e.to_err_code() == -30798 {
@@ -335,35 +284,25 @@ impl MoneroDB {
 
     /// Get the transaction from transaction pool
     ///
-    pub fn get_txpool_tx(
-        &self,
-        txn_hash: &Hash,
-        parse: bool,
-    ) -> Result<Parse<monero::Transaction>, Error> {
+    pub fn get_txpool_tx(&self, txn_hash: &Hash) -> Result<monero::Transaction, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txpool_blob,
             txn_hash.as_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
     /// Get the TxPoolMeta from transaction pool
     ///
-    pub fn get_txpool_meta(
-        &self,
-        txn_hash: &Hash,
-        parse: bool,
-    ) -> Result<Parse<TxPoolMeta>, Error> {
+    pub fn get_txpool_meta(&self, txn_hash: &Hash) -> Result<TxPoolMeta, Error> {
         get_item(
             &self.env,
             self.sub_dbs.txpool_meta,
             txn_hash.as_bytes(),
             &[0],
             15,
-            parse,
         )
     }
 
@@ -371,25 +310,25 @@ impl MoneroDB {
     ///
     pub fn get_db_version(&self) -> Result<u32, Error> {
         let key = b"version\0";
-        get_item::<u32>(&self.env, self.sub_dbs.properties, key, &[0], 15, true)?.deserialize()
+        get_item::<u32>(&self.env, self.sub_dbs.properties, key, &[0], 15)
     }
 
     /// Gets the pruning seed of the database
     ///
     pub fn get_db_pruning_seed(&self) -> Result<u32, Error> {
         let key = b"pruning_seed\0";
-        get_item::<u32>(&self.env, self.sub_dbs.properties, key, &[0], 15, true)?.deserialize()
+        get_item::<u32>(&self.env, self.sub_dbs.properties, key, &[0], 15)
     }
 
     /// Gets the max block size
     ///
     pub fn get_max_block_size(&self) -> Result<u64, Error> {
         let key = b"max_block_size\0";
-        get_item::<u64>(&self.env, self.sub_dbs.properties, key, &[0], 15, true)?.deserialize()
+        get_item::<u64>(&self.env, self.sub_dbs.properties, key, &[0], 15)
     }
 
     /// Returns if the database is readonly
-    /// 
+    ///
     pub fn is_readonly(&self) -> bool {
         self.read_only
     }
@@ -397,26 +336,62 @@ impl MoneroDB {
     // ##################### WRITE TRANSACTIONS #####################
 
     /// Adds an alt block to the database
-    /// 
+    ///
     pub fn add_alt_block(&self, alt_block: &AltBlock) -> Result<(), Error> {
         if self.is_readonly() {
             return Err(Error::ReadOnly);
         }
         let block_id = alt_block.block.id().as_bytes().to_vec();
-        put_item(&self.env, self.sub_dbs.alt_blocks, &block_id, &serialize(alt_block), WriteFlags::NO_DUP_DATA)
-     }
+        put_item(
+            &self.env,
+            self.sub_dbs.alt_blocks,
+            &block_id,
+            &serialize(alt_block),
+            WriteFlags::NO_DUP_DATA,
+        )
+    }
 
-    /// Adds a transaction to the transaction pool 
-    /// 
-    pub fn add_txpool_tx(&self, tx: &monero::Transaction, tx_meta: &TxPoolMeta) -> Result<(), Error> {
+    /// Adds a transaction to the transaction pool
+    ///
+    pub fn add_txpool_tx(
+        &self,
+        tx: &monero::Transaction,
+        tx_meta: &TxPoolMeta,
+    ) -> Result<(), Error> {
         if self.is_readonly() {
             return Err(Error::ReadOnly);
         }
         let tx_hash = tx.hash().as_bytes().to_vec();
-        put_item(&self.env, self.sub_dbs.txpool_meta, &tx_hash, &serialize(tx_meta), WriteFlags::NO_DUP_DATA)?;
-        put_item(&self.env, self.sub_dbs.txpool_blob, &tx_hash, &serialize(tx), WriteFlags::NO_DUP_DATA)?;
+        put_item(
+            &self.env,
+            self.sub_dbs.txpool_meta,
+            &tx_hash,
+            &serialize(tx_meta),
+            WriteFlags::NO_DUP_DATA,
+        )?;
+        put_item(
+            &self.env,
+            self.sub_dbs.txpool_blob,
+            &tx_hash,
+            &serialize(tx),
+            WriteFlags::NO_DUP_DATA,
+        )?;
         Ok(())
     }
+}
+
+fn get_raw_item(
+    env: &Environment,
+    db: Database,
+    key: &[u8],
+    data: &[u8],
+    op: u32,
+) -> Result<Vec<u8>, Error> {
+    let transaction = env.begin_ro_txn()?;
+    let curser = transaction.open_ro_cursor(db)?;
+    let value = curser.get(Some(key), Some(data), op)?;
+
+    Ok(value.1.to_vec())
 }
 
 fn get_item<T: Decodable + Encodable + Debug>(
@@ -425,15 +400,10 @@ fn get_item<T: Decodable + Encodable + Debug>(
     key: &[u8],
     data: &[u8],
     op: u32,
-    parse: bool,
-) -> Result<Parse<T>, Error> {
-    let transaction = env.begin_ro_txn()?;
-    let curser = transaction.open_ro_cursor(db)?;
-    let value = curser.get(Some(key), Some(data), op)?;
-    if parse {
-        return Ok(Parse::True(deserialize(value.1)?));
-    }
-    Ok(Parse::False(value.1.to_vec()))
+) -> Result<T, Error> {
+    let value = get_raw_item(env, db, key, data, op)?;
+
+    Ok(deserialize(&value)?)
 }
 
 fn put_item(

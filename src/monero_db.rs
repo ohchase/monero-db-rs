@@ -13,8 +13,8 @@
 use lmdb::{Cursor, Database, Environment, EnvironmentFlags, Transaction, WriteFlags};
 use monero::consensus::{deserialize, serialize, Decodable, Encodable};
 use monero::cryptonote::hash::Hashable;
-use monero::database_types::block::{AltBlock, BlockHeight, BlockInfo};
-use monero::database_types::transaction::{
+use monero::database::block::{AltBlock, BlockHeight, BlockInfo};
+use monero::database::transaction::{
     OutTx, PreRctOutkey, RctOutkey, TransactionPruned, TxIndex, TxOutputIdx, TxPoolMeta,
 };
 use monero::{Block, Hash, PublicKey};
@@ -110,7 +110,7 @@ impl MoneroDB {
             2,
         )?;
 
-        Ok(block.cum_difficulty() - prev_block.cum_difficulty())
+        Ok(block.cumulative_difficulty() - prev_block.cumulative_difficulty())
     }
 
     /// Gets block height from database

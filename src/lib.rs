@@ -38,7 +38,7 @@ const ZERO_KEY: [u8; 8] = [0; 8];
 #[derive(Error, Debug)]
 pub enum Error {
     /// Errors relating to the database eg: retrieving value from database
-    #[error("Retrieval error: {0}")]
+    #[error("Retrieval error: {0:#?}")]
     DatabaseError(#[from] lmdb::Error),
     /// The database is readonly
     #[error("Database is read only")]

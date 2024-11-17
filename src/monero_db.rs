@@ -28,6 +28,7 @@ use super::{Error, ZERO_KEY};
 /// Monero database
 ///
 pub struct MoneroDB {
+    /// Internal LMDB environment
     pub env: Environment,
     sub_dbs: MoneroSubDB,
     read_only: bool,
@@ -40,7 +41,8 @@ impl MoneroDB {
         let mut env = Environment::new();
         let mut flags = EnvironmentFlags::NO_READAHEAD;
         if read_only {
-            flags |= EnvironmentFlags::READ_ONLY
+            flags |= EnvironmentFlags::READ_ONLY;
+            flags |= EnvironmentFlags::NO_LOCK;
         }
         env.set_max_dbs(32)
             .set_map_size(1 << 30)
@@ -130,6 +132,13 @@ impl MoneroDB {
     pub fn get_blockchain_height(&self) -> Result<u64, Error> {
         let transaction = self.env.begin_ro_txn()?;
         let stats = transaction.stat(self.sub_dbs.block_heights)?;
+        Ok(stats.entries() as u64)
+    }
+
+    /// Get the transaction count of the blockchain
+    pub fn get_tx_count(&self) -> Result<u64, Error> {
+        let transaction = self.env.begin_ro_txn()?;
+        let stats = transaction.stat(self.sub_dbs.txs_pruned)?;
         Ok(stats.entries() as u64)
     }
 

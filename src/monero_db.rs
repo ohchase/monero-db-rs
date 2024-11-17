@@ -28,7 +28,7 @@ use super::{Error, ZERO_KEY};
 /// Monero database
 ///
 pub struct MoneroDB {
-    env: Environment,
+    pub env: Environment,
     sub_dbs: MoneroSubDB,
     read_only: bool,
 }
